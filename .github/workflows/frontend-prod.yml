@@ -1,0 +1,72 @@
+name: ProductionFrontend
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-northeast-2
+  S3_BUCKET: prod-promotion-ui
+  NODE_ENV: production
+  RUN_SCRIPT_ARG: build ## build:prod
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [22.9.0]
+    
+    environment: Production
+
+    steps:  
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'yarn'
+    
+    - name: Install dependencies
+      run: yarn install   
+      env:
+        NODE_ENV: deploy
+
+    - name: Run build script
+      run: yarn ${{ env.RUN_SCRIPT_ARG }}
+      env:
+        NODE_ENV: ${{ env.NODE_ENV }}
+    - name: Prepare artifact directory
+      run: |
+        mkdir -p artifact-folder
+        cp -r dist artifact-folder/dist
+
+    - name: Archive production artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build
+        path: artifact-folder/
+        
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build
+        path: artifact-folder/
+        
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Upload S3 ...
+      run : aws s3 cp ./artifact-folder/dist/ s3://${{ env.S3_BUCKET }} --recursive
